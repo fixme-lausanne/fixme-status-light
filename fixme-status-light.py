@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import time
 import logging
 import requests
+import RPi.GPIO as gpio
 
 
 FORMAT = '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s'
@@ -28,8 +29,8 @@ RUN_STATUS = {
 
 class StatusLight(object):
 
-    _red_light_pin = 1
-    _green_light_pin = 2
+    _red_light_pin = 11
+    _green_light_pin = 12
     _url = None
     _interval = 3600
     _running_state = None
@@ -51,6 +52,11 @@ class StatusLight(object):
 
         if green_light_pin is not None:
             self._green_light_pin = green_light_pin
+
+        gpio.setwarnings(False)
+        gpio.setmode(gpio.BOARD)
+        gpio.setup(self._red_light_pin, gpio.OUT)
+        gpio.setup(self._green_light_pin, gpio.OUT)
 
         self._state = OPEN_STATUS.get('U')
         self._running_state = RUN_STATUS.get('R')
@@ -84,24 +90,53 @@ class StatusLight(object):
         elif res.status_code == 404:
             self._running_state = RUN_STATUS.get('NF')
 
+    def _turn_red(self, state=True):
+        gpio.output(self._red_light_pin, state)
+
+    def _turn_green(self, state=True):
+        gpio.output(self._green_light_pin, state)
+
+    def _turn_open(self):
+        self._turn_red(False)
+        self._turn_green(True)
+
+    def _turn_close(self):
+        self._turn_red(True)
+        self._turn_green(False)
+
+    def _turn_supp_close(self):
+        self._flashing()
+        self._turn_red(True)
+        self._turn_green(True)
+
+    def _turn_off(self):
+        self._turn_red(False)
+        self._turn_green(False)
+
+    def _flashing(self):
+        for i in xrange(50):
+            self._turn_red((i % 2 == 0))
+            self._turn_green((i % 2 == 1))
+            time.sleep(0.1)
+
     def display(self):
         logging.info("Run display")
         if self._state == OPEN_STATUS.get('O'):
             # Red: Off / Green: ON
             logging.debug('Red: Off / Green: ON')
-            pass
+            self._turn_open()
         elif self._state == OPEN_STATUS.get('C'):
             # Red: ON / Green: Off
             logging.debug('Red: ON / Green: Off')
-            pass
+            self._turn_close()
         elif self._state == OPEN_STATUS.get('S'):
             # Red: ON / Green: ON
             logging.debug('Red: ON / Green: ON')
-            pass
+            self._turn_supp_close()
         else:
             # All lights Off
             logging.debug('All lights Off')
-            pass
+            self._turn_off()
 
     def live(self):
         while self._running_state == RUN_STATUS.get('R'):
